@@ -9,8 +9,6 @@
 - **ORM**: SQLModel/SQLAlchemy
 - **数据库**: PostgreSQL
 - **数据库结构同步**: Alembic
-- **嵌入模型**: OpenAI Embeddings
-- **向量数据库**: Qdrant
 
 ## 代码风格及开发流程的规范
 
