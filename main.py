@@ -7,6 +7,7 @@ import logging
 from app.core.config import settings
 from app.core.db_session import create_db_and_tables_async, async_engine, sync_engine
 from app.core.base_exception import BaseException
+from app.core.acps_exception import AcpsException
 from app.utils.ip_restrict import parse_allowed_ips, create_ip_restriction_middleware
 
 # Import API routers
@@ -71,6 +72,14 @@ async def my_exception_handler(request: Request, exc: BaseException):
     )
 
 
+@app.exception_handler(AcpsException)
+async def acps_exception_handler(request: Request, exc: AcpsException):
+    return JSONResponse(
+        status_code=exc.http_status,
+        content=exc.to_response_payload(),
+    )
+
+
 # Include API routers
 app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(account_router, prefix=settings.API_V1_STR)
@@ -81,7 +90,7 @@ app.include_router(
     agent_router_atr, prefix=settings.ATR_BASE_PATH
 )  # ATR 路由，使用 ATR_BASE_PATH 配置
 app.include_router(file_router, prefix=settings.API_V1_STR)
-app.include_router(sync_router, prefix=settings.DRC_BASE_PATH, tags=["数据同步协议"])
+app.include_router(sync_router, prefix=settings.DSP_BASE_PATH, tags=["数据同步协议"])
 
 
 @app.get("/")

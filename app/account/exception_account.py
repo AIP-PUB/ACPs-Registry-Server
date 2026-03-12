@@ -45,3 +45,5 @@ class AccountError:
     INVALID_CREDENTIALS = "invalid_credentials"
     INVALID_REFRESH_TOKEN = "invalid_refresh_token"
     EXPIRED_TOKEN = "expired_token"
+    INVALID_REQUEST = "invalid_request"
+    PASSWORD_COMPLEXITY_ERROR = "password_complexity_error"

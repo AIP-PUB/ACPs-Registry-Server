@@ -36,16 +36,21 @@ import requests
 from requests import Response
 
 DEFAULT_BASE_URL = os.getenv("REGISTRY_API_BASE_URL", "http://localhost:8001/api")
+
+
+def _infer_default_atr_base_url(api_base_url: str) -> str:
+    base = api_base_url.rstrip("/") or "http://localhost:8001/api"
+    if base.endswith("/api"):
+        base = base[:-4]
+    return f"{base}/acps-atr-v2"
+
+
+DEFAULT_ATR_BASE_URL = os.getenv(
+    "REGISTRY_ATR_BASE_URL", _infer_default_atr_base_url(DEFAULT_BASE_URL)
+)
+
 REQUEST_TIMEOUT = 15  # 请求超时时间（秒）
 DEFAULT_PAGE_SIZE = 50
-
-ADMIN_USERNAME = os.getenv("DEMO_ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("DEMO_ADMIN_PASSWORD", "admin123")
-
-CLIENT_USERNAME = os.getenv("DEMO_CLIENT_USERNAME", "demo-client")
-CLIENT_PASSWORD = os.getenv("DEMO_CLIENT_PASSWORD", "demo123")
-CLIENT_NAME = os.getenv("DEMO_CLIENT_NAME", "Demo Client")
-CLIENT_ORG_NAME = os.getenv("DEMO_CLIENT_ORG", "Demo Organization")
 
 
 class DemoError(RuntimeError):
@@ -266,12 +271,7 @@ def _infer_agent_payload(acs: Dict[str, Any]) -> Dict[str, Any]:
         "version": version,
         "description": description or "",
         "logo_url": logo_url,
-        "is_acp_support": True,
         "acs": acs_payload,
-        "is_a2a_support": False,
-        "a2a_url": None,
-        "is_anp_support": False,
-        "anp_url": None,
     }
 
     # 移除值为 None 的可选字段，保持载荷简洁
@@ -283,8 +283,12 @@ def register_agent(
     token: str,
     acs_path: Path,
     submit: bool = True,
+    *,
+    is_ontology: bool = False,
 ) -> Dict[str, Any]:
     _, payload = parse_acs(acs_path)
+    if is_ontology:
+        payload["is_ontology"] = True
 
     response = _request(
         "POST",
@@ -309,6 +313,35 @@ def register_agent(
     return agent
 
 
+def register_entity_via_atr(
+    atr_base_url: str,
+    ontology_aic: str,
+    *,
+    entity_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    body: Dict[str, Any] = {"ontologyAic": ontology_aic.strip().upper()}
+    if entity_payload:
+        if "endPoints" in entity_payload:
+            body["endPoints"] = entity_payload["endPoints"]
+        if "entityUserId" in entity_payload:
+            body["entityUserId"] = entity_payload["entityUserId"]
+        if "entityMeta" in entity_payload:
+            body["entityMeta"] = entity_payload["entityMeta"]
+
+    response = _request(
+        "POST",
+        atr_base_url,
+        "/entity",
+        json=body,
+        expected=(200, 201),
+    )
+    payload = response.json()
+    if payload.get("status") != "ok" or "result" not in payload:
+        error = payload.get("error") or {}
+        raise DemoError(f"实体注册失败: {error.get('message') or payload}")
+    return payload["result"]
+
+
 def get_agent_detail(
     base_url: str, token: str, agent_id: str, client_view: bool = False
 ) -> Dict[str, Any]:
@@ -330,9 +363,15 @@ def _paginate_agents(
     *,
     name: Optional[str] = None,
     version: Optional[str] = None,
+    aic: Optional[str] = None,
+    name_like: Optional[str] = None,
+    version_like: Optional[str] = None,
+    aic_like: Optional[str] = None,
     statuses: Optional[List[str]] = None,
     with_users: bool = False,
-    include_inactive: bool = False,
+    is_active: Optional[str] = None,
+    is_deleted: Optional[str] = None,
+    is_disabled: Optional[str] = None,
 ) -> Iterable[Dict[str, Any]]:
     page_num = 1
     while True:
@@ -341,12 +380,24 @@ def _paginate_agents(
             params["name"] = name
         if version:
             params["version"] = version
+        if aic:
+            params["aic"] = aic
+        if name_like:
+            params["name_like"] = name_like
+        if version_like:
+            params["version_like"] = version_like
+        if aic_like:
+            params["aic_like"] = aic_like
         if statuses:
             params["statuses"] = statuses
         if with_users:
             params["with_users"] = True
-        if include_inactive:
-            params["include_inactive"] = True
+        if is_active:
+            params["is_active"] = is_active
+        if is_deleted:
+            params["is_deleted"] = is_deleted
+        if is_disabled:
+            params["is_disabled"] = is_disabled
 
         response = _request(
             "GET",
@@ -375,8 +426,14 @@ def _find_agent_by_predicate(
     *,
     name: Optional[str] = None,
     version: Optional[str] = None,
+    aic: Optional[str] = None,
+    name_like: Optional[str] = None,
+    version_like: Optional[str] = None,
+    aic_like: Optional[str] = None,
     statuses: Optional[List[str]] = None,
-    include_inactive: bool = False,
+    is_active: Optional[str] = None,
+    is_deleted: Optional[str] = None,
+    is_disabled: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     for agent in _paginate_agents(
         base_url,
@@ -384,8 +441,14 @@ def _find_agent_by_predicate(
         path,
         name=name,
         version=version,
+        aic=aic,
+        name_like=name_like,
+        version_like=version_like,
+        aic_like=aic_like,
         statuses=statuses,
-        include_inactive=include_inactive,
+        is_active=is_active,
+        is_deleted=is_deleted,
+        is_disabled=is_disabled,
     ):
         if predicate(agent):
             return agent
@@ -399,8 +462,11 @@ def _find_agent_by_name_version(
     *,
     name: str,
     version: str,
+    aic_like: Optional[str] = None,
     statuses: Optional[List[str]] = None,
-    include_inactive: bool = False,
+    is_active: Optional[str] = None,
+    is_deleted: Optional[str] = None,
+    is_disabled: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     return _find_agent_by_predicate(
         base_url,
@@ -410,8 +476,11 @@ def _find_agent_by_name_version(
         and item.get("version") == version,
         name=name,
         version=version,
+        aic_like=aic_like,
         statuses=statuses,
-        include_inactive=include_inactive,
+        is_active=is_active,
+        is_deleted=is_deleted,
+        is_disabled=is_disabled,
     )
 
 
@@ -467,6 +536,24 @@ def approve_agent_from_acs(
     return agent
 
 
+def process_agent_by_id(
+    base_url: str,
+    token: str,
+    agent_id: str,
+    approve: bool,
+    comments: str,
+) -> Dict[str, Any]:
+    response = _request(
+        "POST",
+        base_url,
+        f"/agent/staff/{agent_id}/process",
+        token=token,
+        json={"approve": approve, "comments": comments},
+        expected=200,
+    )
+    return response.json()
+
+
 def _extract_aic(data: Dict[str, Any]) -> Optional[str]:
     if "aic" in data and data["aic"]:
         return data["aic"]
@@ -500,14 +587,13 @@ def _write_agent_metadata_to_acs(
     _write_json_preserve_order(acs_path, acs_data)
 
 
-def _resolve_agent_from_acs(
+def resolve_agent_from_acs(
     base_url: str,
     token: str,
     acs_path: Path,
     *,
     path: str,
     statuses: Optional[List[str]] = None,
-    include_inactive: bool = False,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     acs_data = load_json(acs_path)
     aic = _extract_aic(acs_data)
@@ -518,7 +604,6 @@ def _resolve_agent_from_acs(
             path,
             aic=aic,
             statuses=statuses,
-            include_inactive=include_inactive,
         )
         if agent:
             return agent, acs_data
@@ -533,7 +618,6 @@ def _resolve_agent_from_acs(
         name=name,
         version=version,
         statuses=statuses,
-        include_inactive=include_inactive,
     )
     if agent:
         return agent, acs_data
@@ -546,7 +630,7 @@ def _resolve_agent_from_acs(
     )
 
 
-def delete_agent(
+def delete_agent_record(
     base_url: str,
     token: str,
     agent_id: str,
@@ -561,7 +645,7 @@ def delete_agent(
     )
 
 
-def disable_agent(
+def disable_agent_record(
     base_url: str,
     token: str,
     agent_id: str,
@@ -578,14 +662,32 @@ def disable_agent(
     return response.json()
 
 
+def enable_agent_record(
+    base_url: str,
+    token: str,
+    agent_id: str,
+) -> Dict[str, Any]:
+    response = _request(
+        "POST",
+        base_url,
+        f"/agent/staff/{agent_id}/enable",
+        token=token,
+        expected=200,
+    )
+    return response.json()
+
+
 def _find_agent_by_aic(
     base_url: str,
     token: str,
     path: str,
     *,
     aic: str,
+    aic_like: Optional[str] = None,
     statuses: Optional[List[str]] = None,
-    include_inactive: bool = False,
+    is_active: Optional[str] = None,
+    is_deleted: Optional[str] = None,
+    is_disabled: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     predicate = lambda item: (item.get("aic") or "").upper() == aic.upper()
     return _find_agent_by_predicate(
@@ -593,198 +695,104 @@ def _find_agent_by_aic(
         token,
         path,
         predicate=predicate,
+        aic=aic,
+        aic_like=aic_like,
         statuses=statuses,
-        include_inactive=include_inactive,
+        is_active=is_active,
+        is_deleted=is_deleted,
+        is_disabled=is_disabled,
     )
 
 
-def cmd_ensure_accounts(args: argparse.Namespace) -> None:
-    admin_tokens = login_with_password(args.base_url, ADMIN_USERNAME, ADMIN_PASSWORD)
-    client_tokens, client_status = ensure_client_account(
-        args.base_url,
-        CLIENT_USERNAME,
-        CLIENT_PASSWORD,
-        name=CLIENT_NAME,
-        org_name=CLIENT_ORG_NAME,
-    )
-    print(
-        f"管理员账号: {ADMIN_USERNAME} / {ADMIN_PASSWORD} -> 登录成功，访问令牌长度 {len(admin_tokens.access_token)}"
-    )
-    print(
-        f"客户端账号: {CLIENT_USERNAME} / {CLIENT_PASSWORD} -> {client_status}，访问令牌长度 {len(client_tokens.access_token)}"
-    )
-
-
-def cmd_register(args: argparse.Namespace) -> None:
-    tokens = login_with_password(args.base_url, CLIENT_USERNAME, CLIENT_PASSWORD)
-    agent = register_agent(
-        args.base_url,
-        tokens.access_token,
-        Path(args.acs_path),
-        submit=not args.no_submit,
-    )
-    print(
-        json.dumps(
-            {
-                "message": "Agent 注册完成",
-                "id": agent.get("id"),
-                "approval_status": agent.get("approval_status"),
-            },
-            ensure_ascii=False,
-            indent=2,
+def query_agents(
+    base_url: str,
+    token: str,
+    path: str,
+    *,
+    aic: Optional[str] = None,
+    name: Optional[str] = None,
+    version: Optional[str] = None,
+    name_like: Optional[str] = None,
+    version_like: Optional[str] = None,
+    aic_like: Optional[str] = None,
+    is_active: Optional[str] = None,
+    is_deleted: Optional[str] = None,
+    is_disabled: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """按多种过滤条件查询 Agent 列表。"""
+    return list(
+        _paginate_agents(
+            base_url,
+            token,
+            path,
+            name=name,
+            version=version,
+            aic=aic,
+            name_like=name_like,
+            version_like=version_like,
+            aic_like=aic_like,
+            is_active=is_active,
+            is_deleted=is_deleted,
+            is_disabled=is_disabled,
         )
     )
 
 
-def cmd_approve(args: argparse.Namespace) -> None:
-    tokens = login_with_password(args.base_url, ADMIN_USERNAME, ADMIN_PASSWORD)
-    agent = approve_agent_from_acs(
-        args.base_url,
-        tokens.access_token,
-        Path(args.acs_path),
-        comments=args.comments,
-    )
-    print(
-        json.dumps(
-            {
-                "message": "Agent 审批完成",
-                "id": agent.get("id"),
-                "aic": agent.get("aic"),
-                "approval_status": agent.get("approval_status"),
-            },
-            ensure_ascii=False,
-            indent=2,
+def summarize_agent(agent: Dict[str, Any]) -> Dict[str, Any]:
+    """提取在命令行中展示所需的关键信息。"""
+    return {
+        "name": agent.get("name"),
+        "version": agent.get("version"),
+        "approval_status": agent.get("approval_status"),
+        "is_active": agent.get("is_active"),
+        "is_disabled": agent.get("is_disabled"),
+        "is_deleted": agent.get("is_deleted"),
+        "aic": agent.get("aic"),
+    }
+
+
+def resolve_agent(
+    base_url: str,
+    token: str,
+    path: str,
+    *,
+    agent_id: Optional[str] = None,
+    aic: Optional[str] = None,
+    name: Optional[str] = None,
+    version: Optional[str] = None,
+) -> Dict[str, Any]:
+    """通过多种标识方式查询单个 Agent。"""
+    if agent_id:
+        response = _request(
+            "GET",
+            base_url,
+            f"{path}/{agent_id}",
+            token=token,
+            expected=200,
         )
-    )
+        return response.json()
 
-
-def cmd_delete(args: argparse.Namespace) -> None:
-    tokens = login_with_password(args.base_url, CLIENT_USERNAME, CLIENT_PASSWORD)
-    agent, acs_data = _resolve_agent_from_acs(
-        args.base_url,
-        tokens.access_token,
-        Path(args.acs_path),
-        path="/agent/client",
-        include_inactive=True,
-    )
-    delete_agent(args.base_url, tokens.access_token, agent["id"])
-    resolved_aic = agent.get("aic") or _extract_aic(acs_data)
-    print(
-        json.dumps(
-            {
-                "message": "Agent 删除完成",
-                "id": agent.get("id"),
-                "aic": resolved_aic,
-            },
-            ensure_ascii=False,
-            indent=2,
+    if aic:
+        agent = _find_agent_by_aic(
+            base_url,
+            token,
+            path,
+            aic=aic,
         )
-    )
+        if agent:
+            return agent
+        raise DemoError(f"未找到 AIC 为 {aic} 的 Agent")
 
-
-def cmd_disable(args: argparse.Namespace) -> None:
-    tokens = login_with_password(args.base_url, ADMIN_USERNAME, ADMIN_PASSWORD)
-    agent, acs_data = _resolve_agent_from_acs(
-        args.base_url,
-        tokens.access_token,
-        Path(args.acs_path),
-        path="/agent/staff",
-    )
-    result = disable_agent(
-        args.base_url, tokens.access_token, agent["id"], reason=args.reason
-    )
-    resolved_aic = result.get("aic") or agent.get("aic") or _extract_aic(acs_data)
-    print(
-        json.dumps(
-            {
-                "message": "Agent 已禁用",
-                "id": result.get("id") or agent.get("id"),
-                "aic": resolved_aic,
-                "disabled_reason": result.get("disabled_reason") or args.reason,
-            },
-            ensure_ascii=False,
-            indent=2,
+    if name and version:
+        agent = _find_agent_by_name_version(
+            base_url,
+            token,
+            path,
+            name=name,
+            version=version,
         )
-    )
+        if agent:
+            return agent
+        raise DemoError(f"未找到 Agent: name={name}, version={version}")
 
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = DemoArgumentParser(
-        description="注册服务器 Agent 演示流程脚本",
-    )
-    parser.add_argument(
-        "--base-url",
-        default=DEFAULT_BASE_URL,
-        help="Registry API 基础地址（默认: %(default)s）",
-    )
-
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # ensure-accounts 子命令
-    ensure_parser = subparsers.add_parser(
-        "ensure-accounts", help="确保演示用的管理员与客户端账号可用"
-    )
-    ensure_parser.set_defaults(func=cmd_ensure_accounts)
-
-    # register 子命令
-    register_parser = subparsers.add_parser(
-        "register",
-        help="以客户端用户从 ACS 文件注册新 Agent",
-    )
-    register_parser.add_argument("--acs-path", required=True)
-    register_parser.add_argument(
-        "--no-submit",
-        action="store_true",
-        help="跳过提交审核步骤",
-    )
-    register_parser.set_defaults(func=cmd_register)
-
-    # approve 子命令
-    approve_parser = subparsers.add_parser(
-        "approve",
-        help="以管理员审批待审核的 Agent",
-    )
-    approve_parser.add_argument("--acs-path", required=True)
-    approve_parser.add_argument(
-        "--comments",
-        default="通过演示脚本审批",
-        help="审批备注",
-    )
-    approve_parser.set_defaults(func=cmd_approve)
-
-    # delete 子命令
-    delete_parser = subparsers.add_parser(
-        "delete",
-        help="以客户端根据 ACS 标识删除 Agent",
-    )
-    delete_parser.add_argument("--acs-path", required=True)
-    delete_parser.set_defaults(func=cmd_delete)
-
-    # disable 子命令
-    disable_parser = subparsers.add_parser(
-        "disable",
-        help="以管理员根据 ACS 标识禁用 Agent",
-    )
-    disable_parser.add_argument("--acs-path", required=True)
-    disable_parser.add_argument("--reason", default="演示禁用", help="禁用原因")
-    disable_parser.set_defaults(func=cmd_disable)
-
-    return parser
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    try:
-        args.func(args)
-        return 0
-    except DemoError as exc:
-        print(f"错误: {exc}", file=sys.stderr)
-        return 1
-    except requests.RequestException as exc:
-        print(f"HTTP 请求失败: {exc}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    raise DemoError("请提供 agent-id、AIC 或 name+version 用于定位 Agent")

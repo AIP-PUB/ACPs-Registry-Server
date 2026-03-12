@@ -1,0 +1,664 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/agent-capability-spec.json",
+  "title": "AgentCapabilitySpec",
+  "description": "智能体能力描述规范",
+  "type": "object",
+  "properties": {
+    "aic": {
+      "type": "string",
+      "description": "智能体唯一身份标识符，由注册服务分配。",
+      "examples": ["1.2.156.3088.0001.00001.FW49KF.06LGSK.1.0FVY"]
+    },
+    "active": {
+      "type": "boolean",
+      "description": "智能体的激活状态，由注册服务维护。",
+      "examples": [true, false]
+    },
+    "lastModifiedTime": {
+      "type": "string",
+      "format": "date-time",
+      "description": "智能体能力描述的最后修改时间，由注册服务提供。采用 ISO 8601 格式，包含时区偏移信息，推荐使用北京时间（UTC+8）。",
+      "examples": ["2025-03-15T16:30:00+08:00"]
+    },
+    "protocolVersion": {
+      "type": "string",
+      "description": "此智能体支持的 ACPs 协议版本，用于协议兼容性检查和版本匹配。",
+      "examples": ["02.00"]
+    },
+    "name": {
+      "type": "string",
+      "description": "此智能体的名称，简洁明了地描述智能体的主要功能。",
+      "examples": ["北京城区旅游规划助手", "北京郊区景点推荐代理", "文化导览专家"]
+    },
+    "description": {
+      "type": "string",
+      "description": "此智能体的详细描述，帮助用户和其他智能体理解其用途和限制。应明确说明智能体能做什么和不能做什么，包括地理范围、服务类型等限制。",
+      "examples": [
+        "对北京城区旅游的规划和建议。只负责城六区，不负责郊区。北京城区范围旅游景点探索规划代理，专门负责北京城六区（东城/西城/朝阳/海淀/丰台/石景山）的旅游景点推荐和行程规划。拒绝超出城区范围的请求。",
+        "专注于北京郊区（密云/怀柔/延庆/昌平/门头沟/房山/大兴/顺义/平谷/通州）的旅游景点推荐和自然路线规划。拒绝城区范围的请求。"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "description": "智能体的版本号，智能体提供者自行定义格式。推荐遵循语义化版本控制规范（Semantic Versioning）。格式：MAJOR.MINOR.PATCH，当 API 不兼容时递增 MAJOR 版本。",
+      "examples": ["1.0.0", "2.1.3", "1.2.0-beta.1"]
+    },
+    "iconUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "智能体图标的 URL 地址，用于在用户界面中显示智能体标识。",
+      "examples": [
+        "https://example.com/icons/beijing-agent.png",
+        "https://cdn.example.com/agents/tour-guide.svg"
+      ]
+    },
+    "documentationUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "智能体详细文档的 URL 地址，提供使用说明和 API 文档。",
+      "examples": [
+        "https://docs.example.com/agents/beijing-tour",
+        "https://github.example.com/org/agent/blob/main/README.md"
+      ]
+    },
+    "webAppUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "智能体能力展示的 Web 应用 URL，用户可以通过此地址体验智能体功能。",
+      "examples": [
+        "https://demo.example.com/beijing-tour",
+        "https://app.example.com/agents/tour-guide"
+      ]
+    },
+    "provider": {
+      "$ref": "#/$defs/AgentProvider"
+    },
+    "securitySchemes": {
+      "type": "object",
+      "description": "用于授权请求的可用安全方案声明。键是方案名称，值是对应的安全方案配置。遵循 OpenAPI 3.0 安全方案对象规范。智能体可以声明支持多种安全方案，在实际调用时根据端点的 security 配置选择合适的认证方式。",
+      "additionalProperties": {
+        "$ref": "#/$defs/SecurityScheme"
+      },
+      "examples": [
+        {
+          "mtls": {
+            "type": "mutualTLS",
+            "description": "智能体间 mTLS 双向认证",
+            "x-caChallengeBaseUrl": "https://ca.example.com/challenge"
+          },
+          "oidc": {
+            "type": "openIdConnect",
+            "description": "用户身份认证",
+            "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration"
+          }
+        }
+      ]
+    },
+    "endPoints": {
+      "type": "array",
+      "description": "智能体端点配置列表，定义智能体可访问的服务端点信息。每个端点包含 URL、传输协议和安全要求。多个端点应该支持相同的业务功能，支持不同的协议和认证方式，以满足多样化的访问需求。",
+      "items": {
+        "$ref": "#/$defs/AgentEndPoint"
+      },
+      "default": [],
+      "examples": [
+        [
+          {
+            "url": "https://api.example.com/acps-v2",
+            "transport": "JSONRPC",
+            "security": [
+              {
+                "mtls": []
+              }
+            ]
+          }
+        ]
+      ]
+    },
+    "capabilities": {
+      "$ref": "#/$defs/AgentCapabilities"
+    },
+    "defaultInputModes": {
+      "type": "array",
+      "description": "所有技能的默认支持输入 MIME 类型集合，可在每个技能的基础上覆盖。定义智能体可以接受的输入数据格式。",
+      "items": {
+        "type": "string"
+      },
+      "examples": [
+        ["text/plain", "application/json"],
+        ["text/plain", "image/jpeg", "audio/wav"]
+      ]
+    },
+    "defaultOutputModes": {
+      "type": "array",
+      "description": "所有技能的默认支持输出 MIME 类型集合，可在每个技能的基础上覆盖。定义智能体可以生成的输出数据格式。",
+      "items": {
+        "type": "string"
+      },
+      "examples": [
+        ["text/plain", "application/json"],
+        ["text/markdown", "application/json", "image/png"]
+      ]
+    },
+    "skills": {
+      "type": "array",
+      "description": "智能体可以执行的技能或独特能力集合，每个技能代表一个专门化的功能模块。",
+      "items": {
+        "$ref": "#/$defs/AgentSkill"
+      },
+      "default": [],
+      "examples": [
+        [
+          {
+            "id": "beijing-tour/sight-recommender",
+            "name": "景点推荐",
+            "description": "根据用户需求推荐北京城六区内的旅游景点。",
+            "version": "1.0.0",
+            "tags": ["旅游", "北京"]
+          }
+        ]
+      ]
+    },
+    "entityUserId": {
+      "type": "string",
+      "description": "实体的用户关联 ID。用于将智能体实体与特定用户绑定。用于用户助手类智能体，标识该智能体为某个特定用户提供服务。"
+    },
+    "entityMeta": {
+      "type": "object",
+      "description": "实体的额外元数据。具体格式和内容由 Agent Provider 自定义。",
+      "additionalProperties": true,
+      "examples": [
+        {
+          "location": "Beijing",
+          "environment": "production"
+        },
+        {
+          "userRelation": "personal-assistant"
+        }
+      ]
+    }
+  },
+  "required": [
+    "aic",
+    "active",
+    "lastModifiedTime",
+    "protocolVersion",
+    "name",
+    "description",
+    "version",
+    "provider",
+    "securitySchemes",
+    "endPoints",
+    "capabilities",
+    "defaultInputModes",
+    "defaultOutputModes",
+    "skills"
+  ],
+  "$defs": {
+    "AgentProvider": {
+      "title": "AgentProvider",
+      "description": "智能体服务提供者信息对象。定义智能体的开发和维护组织信息，包括组织身份、联系方式和合规资质。用于建立信任关系和提供技术支持联系渠道。",
+      "type": "object",
+      "properties": {
+        "countryCode": {
+          "type": "string",
+          "pattern": "^[A-Z]{2}$",
+          "description": "智能体提供者的国家或地区代码。符合 ISO 3166-1 alpha-2 标准。",
+          "default": "CN",
+          "examples": ["CN", "US", "GB"]
+        },
+        "organization": {
+          "type": "string",
+          "description": "智能体提供者的组织名称，通常为公司、大学或研究机构等顶级组织。",
+          "examples": ["北京邮电大学"]
+        },
+        "department": {
+          "type": "string",
+          "description": "智能体提供者的具体部门或院系名称，提供更精确的组织结构信息。",
+          "examples": ["人工智能学院"]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "智能体提供者的官方网站或相关文档的 URL 地址。",
+          "examples": ["https://ai.bupt.edu.cn"]
+        },
+        "license": {
+          "type": "string",
+          "description": "智能体提供者的法律备案信息或许可证号，用于合规性验证。通常为 URL 对应网站的 ICP 备案号或其他相关资质证明。",
+          "examples": ["京ICP备14033833号-1"]
+        },
+        "name": {
+          "type": "string",
+          "description": "智能体提供者的联系人姓名，便于技术支持和沟通。",
+          "examples": ["张三", "李四"]
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "智能体提供者的联系人电子邮箱地址。",
+          "examples": ["zhangsan@example.com", "lisi@example.com"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "MQProtocolVersion": {
+      "title": "MQProtocolVersion",
+      "description": "消息队列协议版本表达式。格式为 \"{protocol}:{versionExpr}\"，支持精确版本、最低版本、版本范围和通配符模式。",
+      "type": "string",
+      "pattern": "^(mqtt|amqp|kafka|redis|rabbitmq):(>=)?\\d+\\.(\\*|\\d+(\\.\\d+)?)( <\\d+\\.\\d+(\\.\\d+)?)?$",
+      "examples": [
+        "kafka:>=2.8 <4.0",
+        "mqtt:5.*",
+        "amqp:>=0.9.1",
+        "redis:>=7.0",
+        "rabbitmq:3.*",
+        "kafka:3.1"
+      ]
+    },
+    "AgentCapabilities": {
+      "title": "AgentCapabilities",
+      "description": "智能体可选技术能力配置对象。定义智能体支持的高级功能特性，如实时通信、异步通知和消息队列集成。",
+      "type": "object",
+      "properties": {
+        "streaming": {
+          "type": "boolean",
+          "description": "智能体是否支持 Server Send Event（SSE）用于流式响应。启用后可以实现实时数据推送和渐进式内容生成。",
+          "examples": [true, false]
+        },
+        "notification": {
+          "type": "boolean",
+          "description": "智能体是否支持异步推送通知。启用后可以主动向指定 URL 推送事件和状态更新。",
+          "examples": [true, false]
+        },
+        "messageQueue": {
+          "type": "array",
+          "description": "智能体支持的消息队列能力配置。使用协议版本表达式字符串数组进行配置。空数组表示不支持任何消息队列协议。",
+          "items": {
+            "$ref": "#/$defs/MQProtocolVersion"
+          },
+          "default": [],
+          "examples": [
+            ["mqtt:5.*", "kafka:>=2.8 <4.0"],
+            ["redis:>=7.0", "rabbitmq:3.*"],
+            []
+          ]
+        }
+      },
+      "required": ["streaming", "notification", "messageQueue"],
+      "additionalProperties": false
+    },
+    "MutualTLSSecurityScheme": {
+      "title": "MutualTLSSecurityScheme",
+      "description": "双向 TLS 认证安全方案，用于智能体间的高安全级别通信。",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "mutualTLS",
+          "description": "安全方案类型，固定为 \"mutualTLS\"。",
+          "examples": ["mutualTLS"]
+        },
+        "description": {
+          "type": "string",
+          "description": "安全方案的描述信息，说明该方案的用途和特点。",
+          "examples": ["双向TLS认证，确保客户端和服务端身份可信", "智能体间高安全级别通信认证"]
+        },
+        "x-caChallengeBaseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "自定义扩展字段，用于 Agent 证书挑战验证的基础 URL 配置。遵循 OpenAPI 3.0 扩展字段命名规范（以 \"x-\" 开头，使用 camelCase）。",
+          "examples": [
+            "https://certs.example.com/agent-challenge",
+            "https://ca.example.com/challenge/v1"
+          ]
+        }
+      },
+      "required": ["type", "x-caChallengeBaseUrl"],
+      "additionalProperties": false
+    },
+    "OpenIdConnectSecurityScheme": {
+      "title": "OpenIdConnectSecurityScheme",
+      "description": "OpenID Connect 认证安全方案，基于 OAuth 2.0 协议的身份认证层。",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "openIdConnect",
+          "description": "安全方案类型，固定为 \"openIdConnect\"。",
+          "examples": ["openIdConnect"]
+        },
+        "description": {
+          "type": "string",
+          "description": "安全方案的描述信息，说明该 OIDC 方案的用途和特点。",
+          "examples": ["基于OpenID Connect的统一身份认证", "支持多身份提供商的用户认证"]
+        },
+        "openIdConnectUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "OpenID Connect 发现文档的 URL，用于自动发现认证端点和配置信息。客户端可通过此 URL 获取授权服务器的元数据和端点信息。",
+          "examples": [
+            "https://auth.example.com/.well-known/openid-configuration",
+            "https://accounts.google.com/.well-known/openid-configuration",
+            "https://login.microsoftonline.com/common/.well-known/openid-configuration"
+          ]
+        }
+      },
+      "required": ["type", "openIdConnectUrl"],
+      "additionalProperties": false
+    },
+    "APIKeySecurityScheme": {
+      "title": "APIKeySecurityScheme",
+      "description": "API Key 认证安全方案，通过 API 密钥进行身份验证。",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "apiKey",
+          "description": "安全方案类型，固定为 \"apiKey\"。",
+          "examples": ["apiKey"]
+        },
+        "description": {
+          "type": "string",
+          "description": "安全方案的描述信息，说明该方案的用途和特点。",
+          "examples": ["基于API Key的统一身份认证"]
+        },
+        "name": {
+          "type": "string",
+          "description": "API 密钥参数的名称。",
+          "examples": ["example-api-key-name"]
+        },
+        "in": {
+          "type": "string",
+          "enum": ["query", "header", "cookie"],
+          "description": "API 密钥的位置：query、header 或 cookie。",
+          "examples": ["query", "header", "cookie"]
+        }
+      },
+      "required": ["type", "name", "in"],
+      "additionalProperties": false
+    },
+    "HTTPAuthSecurityScheme": {
+      "title": "HTTPAuthSecurityScheme",
+      "description": "HTTP 认证安全方案，支持 Basic、Bearer 等认证方式。",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "http",
+          "description": "安全方案类型，固定为 \"http\"。",
+          "examples": ["http"]
+        },
+        "description": {
+          "type": "string",
+          "description": "安全方案的描述信息，说明该方案的用途和特点。",
+          "examples": ["基于HTTP的统一身份认证"]
+        },
+        "scheme": {
+          "type": "string",
+          "description": "HTTP 认证方案名称，如 basic、bearer 等。",
+          "examples": ["basic", "bearer"]
+        },
+        "bearerFormat": {
+          "type": "string",
+          "description": "Bearer 令牌的格式提示，仅当 scheme 为 bearer 时使用。",
+          "examples": ["None"]
+        }
+      },
+      "required": ["type", "scheme"],
+      "additionalProperties": false
+    },
+    "OAuth2Flow": {
+      "title": "OAuth2Flow",
+      "description": "OAuth2 单个授权流程配置。",
+      "type": "object",
+      "properties": {
+        "authorizationUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "授权端点 URL（如授权码流程需要）。",
+          "examples": ["https://auth.example.com/oauth2/authorize"]
+        },
+        "tokenUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "令牌端点 URL（如密码模式、客户端凭证、授权码流程需要）。",
+          "examples": ["https://auth.example.com/oauth2/token"]
+        },
+        "refreshUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "刷新令牌端点 URL（可选）。",
+          "examples": ["https://auth.example.com/oauth2/refresh"]
+        },
+        "scopes": {
+          "type": "object",
+          "description": "可用作用域定义，键为 scope 名，值为说明。",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "examples": [
+            {
+              "read:profile": "读取用户资料",
+              "write:data": "写入业务数据"
+            }
+          ]
+        }
+      },
+      "required": ["scopes"],
+      "additionalProperties": false
+    },
+    "OAuth2Flows": {
+      "title": "OAuth2Flows",
+      "description": "OAuth2 流程集合定义。",
+      "type": "object",
+      "properties": {
+        "implicit": {
+          "$ref": "#/$defs/OAuth2Flow"
+        },
+        "password": {
+          "$ref": "#/$defs/OAuth2Flow"
+        },
+        "clientCredentials": {
+          "$ref": "#/$defs/OAuth2Flow"
+        },
+        "authorizationCode": {
+          "$ref": "#/$defs/OAuth2Flow"
+        }
+      },
+      "additionalProperties": false
+    },
+    "OAuth2SecurityScheme": {
+      "title": "OAuth2SecurityScheme",
+      "description": "OAuth2 安全方案。",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "oauth2",
+          "description": "安全方案类型，固定为 \"oauth2\"。",
+          "examples": ["oauth2"]
+        },
+        "description": {
+          "type": "string",
+          "description": "安全方案描述信息。",
+          "examples": ["基于OAuth2的授权认证方案"]
+        },
+        "flows": {
+          "$ref": "#/$defs/OAuth2Flows"
+        }
+      },
+      "required": ["type", "flows"],
+      "additionalProperties": false
+    },
+    "SecurityScheme": {
+      "title": "SecurityScheme",
+      "description": "定义可用于保护智能体端点的安全方案。这是基于 OpenAPI 3.0 安全方案对象的判别联合类型。",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/APIKeySecurityScheme"
+        },
+        {
+          "$ref": "#/$defs/HTTPAuthSecurityScheme"
+        },
+        {
+          "$ref": "#/$defs/OAuth2SecurityScheme"
+        },
+        {
+          "$ref": "#/$defs/OpenIdConnectSecurityScheme"
+        },
+        {
+          "$ref": "#/$defs/MutualTLSSecurityScheme"
+        }
+      ]
+    },
+    "AgentEndPoint": {
+      "title": "AgentEndPoint",
+      "description": "智能体服务端点配置对象。定义智能体对外提供服务的网络访问点，包括访问地址、传输协议和安全认证要求。支持多端点配置以实现不同的服务模式。",
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "此端点的完整 URL 地址。根据传输协议类型，URL 的含义有所不同：JSONRPC 为固定 RPC 端点；HTTP_JSON 为 API Base URL。",
+          "examples": [
+            "https://api.example.com/rpc",
+            "https://api.example.com/v1",
+            "https://beijing-agent.example.com/api/v2"
+          ]
+        },
+        "transport": {
+          "type": "string",
+          "description": "此端点支持的传输协议类型。不同协议有不同的调用方式和 URL 解释。",
+          "examples": ["JSONRPC", "HTTP_JSON"]
+        },
+        "security": {
+          "type": "array",
+          "description": "适用于此端点的安全要求配置列表。遵循 OpenAPI 3.0 安全要求对象规范。外层数组为 OR 关系，内层对象为 AND 关系。",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "examples": [
+            [
+              {
+                "mtls": []
+              }
+            ],
+            [
+              {
+                "mtls": []
+              },
+              {
+                "oidc": ["openid", "profile"]
+              }
+            ],
+            [
+              {
+                "mtls": [],
+                "oidc": ["read"]
+              },
+              {
+                "oidc": ["admin"]
+              }
+            ]
+          ]
+        }
+      },
+      "required": ["url", "transport"],
+      "additionalProperties": false
+    },
+    "AgentSkill": {
+      "title": "AgentSkill",
+      "description": "表示智能体可以执行的某方面的独特能力或功能。每个技能代表智能体的一个专门化能力，具有明确的功能边界和输入输出规范。",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "智能体技能的唯一标识符。由提供者定义，建议使用分层命名空间格式。",
+          "examples": ["beijing-urban-tour.sight-recommender", "beijing-urban-tour:itinerary-planner"]
+        },
+        "name": {
+          "type": "string",
+          "description": "技能的名称，简洁明了地描述技能的主要功能。",
+          "examples": ["北京城区旅游景点推荐", "北京城区行程规划", "文化体验优化"]
+        },
+        "description": {
+          "type": "string",
+          "description": "技能的详细描述，帮助客户端或用户理解其目的、功能范围和限制。应明确说明技能能做什么和不能做什么，包括地理范围、服务类型等限制。",
+          "examples": [
+            "根据客户需求推荐北京城六区（东城/西城/朝阳/海淀/丰台/石景山）内的旅游景点，提供文化深度体验建议。拒绝郊区景点推荐请求，如八达岭长城、古北水镇等。",
+            "为北京城区游客提供个性化行程规划，基于文化匹配度、交通便捷度和预算进行优化，支持亲子游、文化深度游等不同需求场景。"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "description": "技能的版本号，由智能体提供者自行定义格式。建议遵循语义化版本控制规范（Semantic Versioning）。格式：MAJOR.MINOR.PATCH，当 API 不兼容时递增 MAJOR 版本。",
+          "examples": ["1.0.0", "2.1.3", "1.2.0-beta.1"]
+        },
+        "tags": {
+          "type": "array",
+          "description": "描述技能能力特征的关键词集合，用于技能发现和匹配。包括功能类型、地域范围、专业领域、目标用户等维度的标签。",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            ["旅游", "景点推荐", "北京", "城区", "文化体验", "行程规划"],
+            ["博物馆", "历史文化", "亲子游", "深度游", "交通便捷"]
+          ]
+        },
+        "examples": {
+          "type": "array",
+          "description": "此技能可以处理的示例提示或场景，帮助用户理解如何使用该技能。提供具体的用户输入示例和期望的处理场景。",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "推荐几个适合带小孩的北京城区景点",
+              "不要太累的故宫周边一日游安排",
+              "朝阳区有什么文化体验好的地方",
+              "预算500元的海淀区半日游"
+            ],
+            [
+              "我想深度了解北京的历史文化",
+              "安排一个周末的亲子游行程",
+              "推荐几个交通便利的博物馆"
+            ]
+          ]
+        },
+        "inputModes": {
+          "type": "array",
+          "description": "此技能支持的输入 MIME 类型集合，覆盖智能体的默认值。定义该技能可以接受的输入数据格式，如文本、图片、音频等。",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            ["text/plain", "application/json"],
+            ["text/plain", "image/jpeg", "image/png"]
+          ]
+        },
+        "outputModes": {
+          "type": "array",
+          "description": "此技能支持的输出 MIME 类型集合，覆盖智能体的默认值。定义该技能可以生成的输出数据格式，如文本、结构化数据、图片等。",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            ["text/plain", "application/json", "text/markdown"],
+            ["text/plain", "application/json"]
+          ]
+        }
+      },
+      "required": ["id", "name", "description", "version", "tags"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

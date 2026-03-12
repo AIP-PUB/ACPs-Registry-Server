@@ -39,7 +39,7 @@ class FileService:
         try:
             xattr.setxattr(full_path, "user.temp", b"true")
         except Exception as e:
-            print(f"Warning: Failed to set xattr: {e}")
+            print(f"Warning: Failed to set xattr: {e} - service.py:42")
 
         return relative_path
 
@@ -53,7 +53,7 @@ class FileService:
         try:
             xattr.removexattr(full_path, "user.temp")
         except Exception as e:
-            print(f"Warning: Failed to remove xattr: {e}")
+            print(f"Warning: Failed to remove xattr: {e} - service.py:56")
 
     @staticmethod
     def delete_file(file_path: str) -> None:
@@ -94,7 +94,7 @@ class FileService:
                             os.remove(full_path)
                             count += 1
                 except Exception as e:
-                    print(f"Error during temp file cleanup: {e}")
+                    print(f"Error during temp file cleanup: {e} - service.py:97")
 
         return count
 

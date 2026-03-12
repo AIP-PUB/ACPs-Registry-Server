@@ -1,16 +1,44 @@
-from typing import Optional
-import secrets
+from __future__ import annotations
+
+from typing import Optional, List
 import hashlib
+import re
+import secrets
 
 from .utils import get_beijing_time
 
+from app.core.config import settings
+
+# ACPs-spec-AIC-v02.00
+# AIC 形如：
+#   1.2.156.3088.<ARSP>.<VENDOR>.<ONTOLOGY_SN>.<INSTANCE_SN>.<VER>.<CRC16>
+# 其中 CRC16 = CRC-16/CCITT-FALSE(0x1021, init=0xFFFF, refin/refout=false, xorout=0x0000)
+# 本实现支持对 CRC 计算加入盐：将环境变量 AIC_CRC_SALT（十六进制字符串）解析为字节后，
+# 追加到 body_1_9 的 ASCII 字节序列末尾参与 CRC 计算。
+
+AIC_CRC_SALT = settings.AIC_CRC_SALT
+
+# 由国家OID注册中心分配的前缀
+AIC_PREFIX = "1.2.156.3088"
+
+# 第 9 级：AIC 版本号（1~Z，Base36）
 PROTOCOL_VERSION = "1"
-MANAGER_CODE = "0001"
-PROVIDER_CODE = "00001"
+
+# 第 5/6 级：注册服务商/供应商标识（1~ZZZZZZ）。为兼容旧代码，这里沿用原常量名。
+MANAGER_CODE = "0001"  # ARSP
+PROVIDER_CODE = "00001"  # Vendor
+
+# 默认序列号长度（规范允许 1~9 位，这里默认生成 6 位；本体实例序列号为全 0）
+DEFAULT_ONTOLOGY_SERIAL_LEN = 6
+DEFAULT_INSTANCE_SERIAL_LEN = 6
 
 # Base36 字母表（0-9, A-Z）
 BASE36_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 BASE36_INDEX = {ch: i for i, ch in enumerate(BASE36_ALPHABET)}
+
+_RE_BASE36 = re.compile(r"^[0-9A-Z]+$")
+_RE_BASE36_4 = re.compile(r"^[0-9A-Z]{4}$")
+_RE_DIGITS = re.compile(r"^[0-9]+$")
 
 
 def _base36_encode(num: int, length: int) -> str:
@@ -61,11 +89,6 @@ def _get_ms_of_year(now_beijing: Optional[float] = None) -> int:
     return max(delta_ms, 0)
 
 
-def _encode_year_b36(year: int) -> str:
-    """将十进制年份编码为 3 位 Base36（直接以年份值编码，比如 2025 -> '1K9'）。"""
-    return _base36_encode(year, 3)
-
-
 def _serial_from_ms_with_salt(
     ms_in_year: int, salt: bytes, kind: bytes, length: int
 ) -> str:
@@ -90,91 +113,224 @@ def _serial_from_ms_with_salt(
     return s36
 
 
+def _normalize_aic_text(text: str) -> str:
+    """规范化：去除空白字符并转为大写（保留 '.' 分隔符）。"""
+    if text is None:
+        return ""
+    # 去除所有空白（含\t/\n等）
+    return re.sub(r"\s+", "", str(text)).upper()
+
+
+def _split_aic(aic_text: str) -> List[str]:
+    aic_text = _normalize_aic_text(aic_text)
+    if not aic_text:
+        return []
+    parts = aic_text.split(".")
+    # 不允许空段
+    if any(p == "" for p in parts):
+        return []
+    return parts
+
+
+def _crc16_ccitt_false_with_salt(data: bytes, salt: bytes) -> int:
+    """CRC-16/CCITT-FALSE: poly=0x1021, init=0xFFFF, refin/refout=False, xorout=0x0000.
+    Salt is appended to the data.
+    """
+    salted_data = data + salt
+    crc = 0xFFFF
+    for b in salted_data:
+        crc ^= (b << 8) & 0xFFFF
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc & 0xFFFF
+
+
+def calculate_aic_checksum(body_1_9: str) -> str:
+    """计算第 10 级 CRC 校验码（固定 4 位 Base36，0-9/A-Z，大写）。
+
+    CRC 输入为：normalize(body_1_9).encode('ascii') + salt_bytes
+    其中 salt_bytes 由 AIC_CRC_SALT（十六进制字符串）解析得到。
+    """
+    normalized = _normalize_aic_text(body_1_9)
+    # Parse hex string salt to bytes
+    try:
+        salt_hex = AIC_CRC_SALT[2:] if AIC_CRC_SALT.lower().startswith("0x") else AIC_CRC_SALT
+        if len(salt_hex) % 2 != 0:
+            salt_hex = "0" + salt_hex
+        salt_bytes = bytes.fromhex(salt_hex)
+    except Exception:
+        salt_bytes = b'\xff\xff'
+
+    crc = _crc16_ccitt_false_with_salt(normalized.encode("ascii"), salt_bytes)
+    return _base36_encode(crc, 4)
+
+
+def validate_aic(aic: str, *, expected_prefix: str = AIC_PREFIX) -> bool:
+    """验证 ACPs-spec-AIC-v02.00 AIC。
+
+    规则：
+    - 10 段（以 '.' 分隔）；
+    - 1~4 段为数字（OID 前缀）；
+    - 5~8 段为 Base36（0-9,A-Z），长度分别为 1~6,1~6,1~9,1~9；
+    - 9 段为 Base36 单字符；
+    - 10 段为固定 4 位 Base36；
+        - CRC16 对 1~9 段拼接字符串（含 '.'）计算，大小写不敏感；
+            本实现会在该字符串 ASCII 字节末尾追加 salt_bytes 后再计算 CRC。
+    """
+    parts = _split_aic(aic)
+    if len(parts) != 10:
+        return False
+
+    prefix_parts = expected_prefix.split(".") if expected_prefix else []
+    if prefix_parts and parts[: len(prefix_parts)] != prefix_parts:
+        return False
+
+    if not all(_RE_DIGITS.fullmatch(p) for p in parts[:4]):
+        return False
+
+    seg5, seg6, seg7, seg8, seg9, seg10 = parts[4], parts[5], parts[6], parts[7], parts[8], parts[9]
+
+    if not (_RE_BASE36.fullmatch(seg5) and 1 <= len(seg5) <= 6):
+        return False
+    if not (_RE_BASE36.fullmatch(seg6) and 1 <= len(seg6) <= 6):
+        return False
+    if not (_RE_BASE36.fullmatch(seg7) and 1 <= len(seg7) <= 9):
+        return False
+    if not (_RE_BASE36.fullmatch(seg8) and 1 <= len(seg8) <= 9):
+        return False
+    if not (_RE_BASE36.fullmatch(seg9) and len(seg9) == 1):
+        return False
+    if not _RE_BASE36_4.fullmatch(seg10):
+        return False
+
+    body_1_9 = ".".join(parts[:9])
+    expected_crc = calculate_aic_checksum(body_1_9)
+    return expected_crc == seg10
+
+
+def _validate_base36_segment(name: str, value: str, *, min_len: int, max_len: int) -> str:
+    v = _normalize_aic_text(value)
+    if not v:
+        raise ValueError(f"{name} 不能为空")
+    if not _RE_BASE36.fullmatch(v):
+        raise ValueError(f"{name} 必须仅包含 0-9 与 A-Z")
+    if not (min_len <= len(v) <= max_len):
+        raise ValueError(f"{name} 长度必须在 {min_len}~{max_len} 之间")
+    return v
+
+
+def _generate_nonzero_base36(kind: bytes, length: int) -> str:
+    ms_in_year = _get_ms_of_year()
+    salt = secrets.token_bytes(8)
+    serial = _serial_from_ms_with_salt(ms_in_year, salt, kind, length)
+    # 避免全 0
+    while set(serial) == {"0"}:
+        salt = secrets.token_bytes(8)
+        serial = _serial_from_ms_with_salt(ms_in_year, salt, kind, length)
+    return serial
+
+
 def generate_aic(
     protocol_version: str = PROTOCOL_VERSION,
     manager_code: str = MANAGER_CODE,
     provider_code: str = PROVIDER_CODE,
 ) -> str:
+    """生成实体 AIC（第 8 级实例序列号不为全 0）。"""
+    # 第 9 级版本号：Base36 单字符
+    ver = _validate_base36_segment("protocol_version", protocol_version, min_len=1, max_len=1)
+    arsp = _validate_base36_segment("manager_code", manager_code, min_len=1, max_len=6)
+    vendor = _validate_base36_segment("provider_code", provider_code, min_len=1, max_len=6)
+
+    ontology_serial = _generate_nonzero_base36(b"ONT", DEFAULT_ONTOLOGY_SERIAL_LEN)
+    instance_serial = _generate_nonzero_base36(b"INS", DEFAULT_INSTANCE_SERIAL_LEN)
+
+    body_1_9 = f"{AIC_PREFIX}.{arsp}.{vendor}.{ontology_serial}.{instance_serial}.{ver}"
+    crc = calculate_aic_checksum(body_1_9)
+    return f"{body_1_9}.{crc}"
+
+
+def get_instance_serial(aic: str) -> Optional[str]:
+    """提取第 8 级实例序列号（失败返回 None）。"""
+    parts = _split_aic(aic)
+    if len(parts) != 10:
+        return None
+    return parts[7]
+
+
+def is_ontology_aic(aic: str) -> bool:
     """
-    生成符合 AIC（Agent Identity Code）规范的 32 位身份码（Base36 本体码 + 2 位十进制校验）。
+    判断 AIC 是否为本体 AIC（Ontology AIC）。
 
-    AIC 字段（共 32 位）：
-    - [1]    协议版本号（1 位，Base36，通常为 '1'）
-    - [2-5]  管理机构代码（4 位，示例："0001"）
-    - [6-10] 智能体提供商机构代码（5 位，示例："00001"）
-    - [11-13] 注册年份（3 位，十进制年份按 Base36 编码，如 2025 -> '1K9'）
-    - [14-22] 本体序列号（9 位，基于年内毫秒数 + 随机盐，经哈希映射生成，Base36）
-    - [23-30] 实例序列号（8 位，基于年内毫秒数 + 随机盐，经哈希映射生成，Base36）
-    - [31-32] 校验码（2 位十进制数字），按 GSMA 风格：
-        将前 30 位 Base36 本体码换算为十进制大整数，乘以 100 后对 97 取余；
-        用 98 减去余数，结果左侧补零到 2 位。
-
-    返回:
-        32 位 AIC 字符串
+    规则：第 8 级实例序列号全为 0。
     """
-    # 基础字段
-    dt = get_beijing_time()
-    year_b36 = _encode_year_b36(dt.year)
-
-    # 年内毫秒数 + 随机盐 -> 两段不同的序列号
-    ms_in_year = _get_ms_of_year()
-    # 8 字节随机盐，提升并发唯一性
-    salt = secrets.token_bytes(8)
-    object_serial = _serial_from_ms_with_salt(ms_in_year, salt, b"OBJ", 9)
-    instance_serial = _serial_from_ms_with_salt(ms_in_year, salt, b"INS", 8)
-
-    # 组装 30 位本体码（Base32）
-    body30 = f"{protocol_version}{manager_code}{provider_code}{year_b36}{object_serial}{instance_serial}"
-
-    # 计算 2 位十进制校验码
-    check_digits = calculate_check_digits(body30)
-    return body30 + check_digits
-
-
-def calculate_check_digits(aic_body_base36: str) -> str:
-    """
-    计算新版 AIC 的 2 位十进制校验码（Base36 本体码 -> 十进制 -> GSMA-97）。
-
-    步骤：
-    1) 将 30 位 Base36 本体码解码为一个十进制大整数 N；
-    2) 计算 remainder = (N * 100) % 97；
-    3) check = 98 - remainder；
-    4) 返回 2 位十进制字符串（若 <10 则左补 0）。
-    """
-    if len(aic_body_base36) != 30:
-        raise ValueError("校验码计算需要 30 位 Base36 本体码")
-    n = _base36_decode(aic_body_base36)
-    remainder = (n * 100) % 97
-    check = 98 - remainder
-    return f"{check:02d}"
-
-
-def validate_aic(aic: str) -> bool:
-    """
-    验证新版 AIC 的有效性。
-
-    验证规则：
-    - 长度必须为 32；
-    - 前 30 位为 Base36（0-9, A-Z），后 2 位为十进制数字；
-    - 将前 30 位按 Base36 解码为十进制大整数 N，检查 (N * 100 + 校验码) % 97 == 1。
-    """
-    if not aic:
+    if not validate_aic(aic):
         return False
-    aic = aic.strip().upper().replace(" ", "")
-    if len(aic) != 32:
-        return False
+    instance_serial = get_instance_serial(aic)
+    return bool(instance_serial) and set(instance_serial) == {"0"}
 
-    body, chk = aic[:30], aic[30:]
-    # 校验后两位必须为十进制
-    if not chk.isdigit():
-        return False
 
-    # 校验前 30 位字符集
-    try:
-        n = _base36_decode(body)
-    except ValueError:
-        return False
+def is_entity_aic(aic: str) -> bool:
+    """
+    判断 AIC 是否为实体 AIC（Entity AIC）。
 
-    # 按规范验证： (N * 100 + chk) % 97 == 1
-    chk_val = int(chk)
-    return ((n * 100) + chk_val) % 97 == 1
+    规则：第 8 级实例序列号非全 0。
+    """
+    return not is_ontology_aic(aic)
+
+
+def get_ontology_aic_from_entity(entity_aic: str) -> Optional[str]:
+    """
+    从实体 AIC 提取对应的本体 AIC：将第 8 级替换为全 0 并重算 CRC。
+    """
+    if not validate_aic(entity_aic):
+        return None
+    parts = _split_aic(entity_aic)
+    instance_serial = parts[7]
+    parts[7] = "0" * len(instance_serial)
+    body_1_9 = ".".join(parts[:9])
+    parts[9] = calculate_aic_checksum(body_1_9)
+    return ".".join(parts)
+
+
+def generate_entity_aic_from_ontology(ontology_aic: str) -> Optional[str]:
+    """
+    基于本体 AIC 生成新的实体 AIC：保留 1~7/9 级，重生成第 8 级并重算 CRC。
+    """
+    if not is_ontology_aic(ontology_aic):
+        return None
+    parts = _split_aic(ontology_aic)
+    # 第 8 级长度沿用本体输入
+    instance_len = len(parts[7])
+    parts[7] = _generate_nonzero_base36(b"ENT", instance_len)
+    body_1_9 = ".".join(parts[:9])
+    parts[9] = calculate_aic_checksum(body_1_9)
+    return ".".join(parts)
+
+
+def get_derived_entity_like_prefix(ontology_aic: str) -> Optional[str]:
+    """用于 DB like 查询的派生实体前缀：'<1..7>.'（失败返回 None）。"""
+    if not validate_aic(ontology_aic):
+        return None
+    parts = _split_aic(ontology_aic)
+    return ".".join(parts[:7]) + "."
+
+
+def generate_ontology_aic(
+    protocol_version: str = PROTOCOL_VERSION,
+    manager_code: str = MANAGER_CODE,
+    provider_code: str = PROVIDER_CODE,
+) -> str:
+    """生成本体 AIC（第 8 级实例序列号全为 0）。"""
+    ver = _validate_base36_segment("protocol_version", protocol_version, min_len=1, max_len=1)
+    arsp = _validate_base36_segment("manager_code", manager_code, min_len=1, max_len=6)
+    vendor = _validate_base36_segment("provider_code", provider_code, min_len=1, max_len=6)
+
+    ontology_serial = _generate_nonzero_base36(b"ONT", DEFAULT_ONTOLOGY_SERIAL_LEN)
+    instance_serial = "0" * DEFAULT_INSTANCE_SERIAL_LEN
+
+    body_1_9 = f"{AIC_PREFIX}.{arsp}.{vendor}.{ontology_serial}.{instance_serial}.{ver}"
+    crc = calculate_aic_checksum(body_1_9)
+    return f"{body_1_9}.{crc}"

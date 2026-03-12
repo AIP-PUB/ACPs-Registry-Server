@@ -56,3 +56,5 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+.github/copilot-instructions.md
+acs-examples/

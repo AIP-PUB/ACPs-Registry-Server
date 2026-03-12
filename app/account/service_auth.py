@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any
 import random
 import string
 import uuid
+import re
 
 from sqlalchemy.orm import Session
 from fastapi import status
@@ -75,6 +76,51 @@ def send_verification_code(phone: str) -> str:
     # In a real implementation, this would send an SMS
     return code
 
+
+def validate_password_complexity(password: str) -> None:
+    """
+    Validate password complexity:
+    1. Length 8-20 characters
+    2. Must contain uppercase letters
+    3. Must contain lowercase letters
+    4. Must contain numbers
+    5. Must contain special characters (anything other than letters, numbers, or spaces)
+    """
+    if not (8 <= len(password) <= 20):
+        raise AccountException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_name=AccountError.PASSWORD_COMPLEXITY_ERROR,
+            error_msg="Password must be between 8 and 20 characters",
+        )
+
+    if not re.search(r"[A-Z]", password):
+        raise AccountException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_name=AccountError.PASSWORD_COMPLEXITY_ERROR,
+            error_msg="Password must contain at least one uppercase letter",
+        )
+
+    if not re.search(r"[a-z]", password):
+        raise AccountException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_name=AccountError.PASSWORD_COMPLEXITY_ERROR,
+            error_msg="Password must contain at least one lowercase letter",
+        )
+
+    if not re.search(r"\d", password):
+        raise AccountException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_name=AccountError.PASSWORD_COMPLEXITY_ERROR,
+            error_msg="Password must contain at least one number",
+        )
+
+    if not re.search(r"[^A-Za-z0-9\s]", password):
+        raise AccountException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_name=AccountError.PASSWORD_COMPLEXITY_ERROR,
+            error_msg="Password must contain at least one special character",
+        )
+        
 
 def register_user(db: Session, user_data: Dict[str, Any], code: str) -> User:
     """Register a new user after verification"""

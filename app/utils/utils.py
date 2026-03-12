@@ -18,9 +18,11 @@ def parse_boolean_string(bool_str: Optional[str]) -> Optional[bool]:
     if bool_str is None or bool_str == "":
         return None
 
-    if bool_str.lower() in ("true", "1", "yes"):
+    normalized = bool_str.lower()
+
+    if normalized in ("true", "1", "yes", "t"):
         return True
-    elif bool_str.lower() in ("false", "0", "no"):
+    elif normalized in ("false", "0", "no", "f"):
         return False
 
     return None

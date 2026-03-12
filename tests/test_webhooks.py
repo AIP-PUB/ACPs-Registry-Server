@@ -28,6 +28,7 @@ class _DummyWebHook:
         updated_at=None,
     ):
         from datetime import datetime
+
         self.id = id
         self.url = url
         self.types = types
@@ -275,7 +276,9 @@ class TestWebhooksAPI:
         def mock_list(db, page_num, page_size, status_filter):
             items = [
                 _DummyWebHook(id="wh_1", url="u1", types="acs", events="data_change"),
-                _DummyWebHook(id="wh_2", url="u2", types="acs", events="service_healthy"),
+                _DummyWebHook(
+                    id="wh_2", url="u2", types="acs", events="service_healthy"
+                ),
             ]
             return items, 2
 
@@ -326,7 +329,7 @@ class TestWebhookBatching:
     def _set_batch_window(self, monkeypatch, seconds: float):
         monkeypatch.setattr(
             service_module.settings,
-            "DRC_WEBHOOK_BATCH_WINDOW_SECONDS",
+            "DSP_WEBHOOK_BATCH_WINDOW_SECONDS",
             seconds,
             raising=False,
         )
@@ -340,7 +343,9 @@ class TestWebhookBatching:
             except IndexError:
                 return 103
 
-        monkeypatch.setattr(service_module, "get_current_max_seq", _fake_get_current_max_seq)
+        monkeypatch.setattr(
+            service_module, "get_current_max_seq", _fake_get_current_max_seq
+        )
 
     def test_data_change_batch_create_then_create(self, client, monkeypatch):
         """在批处理窗口内两次触发，应仅合并触发一次webhook"""
@@ -415,5 +420,3 @@ class TestWebhookBatching:
         if state.get("timer") is not None:
             state["timer"].cancel()
             state["timer"] = None
-
-

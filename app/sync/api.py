@@ -49,30 +49,30 @@ async def get_info(db: Session = Depends(get_db)):
     try:
         max_seq = get_current_max_seq(db)
 
-        # 根据DRC协议规范计算oldest_seq
+        # 根据 DSP 协议规范计算 oldest_seq
         oldest_seq = get_retention_oldest_seq(
-            db, settings.DRC_RETENTION_WINDOW_HOURS, settings.DRC_RETENTION_MAX_RECORDS
+            db, settings.DSP_RETENTION_WINDOW_HOURS, settings.DSP_RETENTION_MAX_RECORDS
         )
 
         info = InfoResponse(
             service=settings.PROJECT_NAME,
             version=settings.PROJECT_VERSION,
             status="healthy",
-            supported_types=["acs"],  # 根据DRC协议，目前只支持acs类型
+            supported_types=["acs"],  # 根据 DSP 协议，目前只支持 acs 类型
             retention={
-                "window_hours": settings.DRC_RETENTION_WINDOW_HOURS,
+                "window_hours": settings.DSP_RETENTION_WINDOW_HOURS,
                 "oldest_seq": oldest_seq,
                 "newest_seq": max_seq,
             },
             snapshot={
-                "access_timeout_hours": settings.DRC_SNAPSHOT_ACCESS_TIMEOUT_HOURS,
-                "max_lifetime_hours": settings.DRC_SNAPSHOT_MAX_LIFETIME_HOURS,
+                "access_timeout_hours": settings.DSP_SNAPSHOT_ACCESS_TIMEOUT_HOURS,
+                "max_lifetime_hours": settings.DSP_SNAPSHOT_MAX_LIFETIME_HOURS,
                 "supports_incremental": True,
                 "supports_chunking": True,
             },
             changes={
                 "supports_long_polling": False,  # 暂不支持长轮询
-                "payload_type": "FULL_OBJ",  # 根据DRC协议，使用完整对象
+                "payload_type": "FULL_OBJ",  # 根据 DSP 协议，使用完整对象
             },
         )
         return info
@@ -91,17 +91,17 @@ async def get_changes_api(
     response: Response,
     types: Optional[str] = Query(None, description="数据类型，逗号分隔"),
     seq: Optional[int] = Query(None, description="起始序列号"),
-    limit: int = Query(settings.DRC_CHANGES_DEFAULT_LIMIT, description="返回条数限制"),
+    limit: int = Query(settings.DSP_CHANGES_DEFAULT_LIMIT, description="返回条数限制"),
     wait: Optional[str] = Query(None, description="长轮询等待时间（秒）"),
     db: Session = Depends(get_db),
 ):
     """获取增量变更数据，支持长轮询"""
     try:
         # 验证limit参数范围
-        if limit > settings.DRC_CHANGES_MAX_LIMIT:
-            limit = settings.DRC_CHANGES_MAX_LIMIT
+        if limit > settings.DSP_CHANGES_MAX_LIMIT:
+            limit = settings.DSP_CHANGES_MAX_LIMIT
         elif limit <= 0:
-            limit = settings.DRC_CHANGES_DEFAULT_LIMIT
+            limit = settings.DSP_CHANGES_DEFAULT_LIMIT
 
         # 解析types参数
         type_list = None
@@ -433,14 +433,14 @@ async def cleanup_changelogs_api(db: Session = Depends(get_db)):
     try:
         cleaned_count = cleanup_old_changelog_entries(
             db=db,
-            window_hours=settings.DRC_RETENTION_WINDOW_HOURS,
-            max_records=settings.DRC_RETENTION_MAX_RECORDS,
+            window_hours=settings.DSP_RETENTION_WINDOW_HOURS,
+            max_records=settings.DSP_RETENTION_MAX_RECORDS,
         )
         return {
             "cleaned_count": cleaned_count,
             "retention_config": {
-                "window_hours": settings.DRC_RETENTION_WINDOW_HOURS,
-                "max_records": settings.DRC_RETENTION_MAX_RECORDS,
+                "window_hours": settings.DSP_RETENTION_WINDOW_HOURS,
+                "max_records": settings.DSP_RETENTION_MAX_RECORDS,
             },
         }
     except Exception as e:

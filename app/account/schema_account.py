@@ -1,4 +1,11 @@
-from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    EmailStr,
+    field_validator,
+    model_validator,
+    ConfigDict,
+)
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid
@@ -21,8 +28,7 @@ class RoleUpdate(RoleBase):
 class RoleResponse(RoleBase):
     id: uuid.UUID
 
-    class Config:
-        from_attributes = True  # 替换 orm_mode = True，适配 Pydantic V2
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserBase(BaseModel):
@@ -111,16 +117,7 @@ class UserResponse(UserBase):
             return beijing_time.replace(tzinfo=BEIJING_TIMEZONE)
         return v
 
-    class Config:
-        from_attributes = True  # 替换 orm_mode = True，适配 Pydantic V2
-        json_encoders = {
-            # 确保datetime在JSON序列化时使用ISO格式带时区
-            datetime: lambda dt: (
-                dt.isoformat()
-                if dt.tzinfo
-                else dt.replace(tzinfo=BEIJING_TIMEZONE).isoformat()
-            )
-        }
+    model_config = ConfigDict(from_attributes=True)
 
     @field_validator("roles", mode="before")
     @classmethod
@@ -135,13 +132,3 @@ class UserListResponse(BaseModel):
     total: int
     page_num: Optional[int] = None
     page_size: Optional[int] = None
-
-    class Config:
-        json_encoders = {
-            # 确保datetime在JSON序列化时使用ISO格式带时区
-            datetime: lambda dt: (
-                dt.isoformat()
-                if dt.tzinfo
-                else dt.replace(tzinfo=BEIJING_TIMEZONE).isoformat()
-            )
-        }

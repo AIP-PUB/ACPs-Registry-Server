@@ -37,7 +37,7 @@ def create_change_log(
     data_type: str,
     object_id: str,
     version: int,
-    payload: Optional[str] = None,
+    payload: Optional[Any] = None,
     op: str = "upsert",  # 新增操作类型参数，默认为upsert
     seq: Optional[int] = None,
 ) -> ChangeLog:
@@ -100,7 +100,13 @@ def update_agent_with_changelog(
         if "acs" in agent_data:
             new_acs = agent_data["acs"]
             if new_acs:
-                new_acs_hash = sha256(new_acs)
+                # acs 现在是 JSONB 类型（dict），需要序列化为字符串来计算 hash
+                if isinstance(new_acs, dict):
+                    new_acs_hash = sha256(json.dumps(new_acs, ensure_ascii=False))
+                elif isinstance(new_acs, str):
+                    new_acs_hash = sha256(new_acs)
+                else:
+                    new_acs_hash = None
             else:
                 new_acs_hash = None
 
@@ -206,8 +212,11 @@ def get_changes(
             try:
                 # 解析payload
                 payload_data = None
-                if change.payload:
-                    payload_data = json.loads(change.payload)
+                if change.payload is not None:
+                    if isinstance(change.payload, str):
+                        payload_data = json.loads(change.payload)
+                    else:
+                        payload_data = change.payload
 
                 envelope = Envelope(
                     seq=change.seq,
@@ -418,9 +427,9 @@ def calculate_expire_time(
 ) -> datetime:
     """计算快照过期时间，取访问超时和最大生存时间的较小值"""
     if access_timeout_hours is None:
-        access_timeout_hours = settings.DRC_SNAPSHOT_ACCESS_TIMEOUT_HOURS
+        access_timeout_hours = settings.DSP_SNAPSHOT_ACCESS_TIMEOUT_HOURS
     if max_lifetime_hours is None:
-        max_lifetime_hours = settings.DRC_SNAPSHOT_MAX_LIFETIME_HOURS
+        max_lifetime_hours = settings.DSP_SNAPSHOT_MAX_LIFETIME_HOURS
 
     now = get_beijing_time()
     access_expire = now + timedelta(hours=access_timeout_hours)
@@ -520,8 +529,11 @@ def create_snapshot(
             try:
                 # 解析payload
                 payload_data = None
-                if row.payload:
-                    payload_data = json.loads(row.payload)
+                if row.payload is not None:
+                    if isinstance(row.payload, str):
+                        payload_data = json.loads(row.payload)
+                    else:
+                        payload_data = row.payload
 
                 envelope = Envelope(
                     seq=row.seq,
@@ -650,8 +662,11 @@ def get_snapshot_chunk(
             try:
                 # 解析payload
                 payload_data = None
-                if row.payload:
-                    payload_data = json.loads(row.payload)
+                if row.payload is not None:
+                    if isinstance(row.payload, str):
+                        payload_data = json.loads(row.payload)
+                    else:
+                        payload_data = row.payload
 
                 envelope = Envelope(
                     seq=row.seq,
@@ -1191,7 +1206,7 @@ def send_webhook_notification(
             "X-Webhook-ID": webhook.id,
             "X-Webhook-Signature": signature,
             "X-Webhook-Timestamp": str(timestamp),
-            "User-Agent": "ACPS-DRC-WebHook/1.0",
+            "User-Agent": "ACPS-DSP-WebHook/1.0",
         }
 
         # 如果该webhook-event已在发送中，则跳过本次发送
@@ -1366,7 +1381,7 @@ def trigger_data_change_webhook(db: Session, data_types: List[str]) -> None:
         data_types: 数据类型列表
     """
     try:
-        batch_window = settings.DRC_WEBHOOK_BATCH_WINDOW_SECONDS
+        batch_window = settings.DSP_WEBHOOK_BATCH_WINDOW_SECONDS
         if batch_window and batch_window > 0:
             # 启用批处理：不发送即时data_change，只合并到窗口后统一发送一次
             current_seq = get_current_max_seq(db)

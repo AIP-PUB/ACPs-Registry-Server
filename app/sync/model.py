@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from sqlmodel import Field, SQLModel
+from pydantic import ConfigDict
 from sqlalchemy import (
     Column,
     Text,
@@ -12,6 +13,7 @@ from sqlalchemy import (
     Integer,
     Boolean,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 import uuid
 from app.utils.utils import get_beijing_time
 
@@ -53,10 +55,9 @@ class ChangeLog(SQLModel, table=True):
     version: int = Field(index=True)
 
     # 数据载荷，对应Agent.acs字段的内容
-    payload: Optional[str] = Field(default=None, sa_column=Column(Text))
+    payload: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Snapshot(SQLModel, table=True):
@@ -98,8 +99,7 @@ class Snapshot(SQLModel, table=True):
     # 过期时间
     expire_at: datetime = Field(sa_column=Column(TIMESTAMP(timezone=True)))
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WebHook(SQLModel, table=True):
@@ -164,5 +164,4 @@ class WebHook(SQLModel, table=True):
         default_factory=get_beijing_time, sa_column=Column(TIMESTAMP(timezone=True))
     )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

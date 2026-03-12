@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, Any, Dict, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Envelope(BaseModel):
@@ -16,8 +16,7 @@ class Envelope(BaseModel):
     version: int = Field(..., description="对象版本号")
     payload: Optional[Dict[str, Any]] = Field(None, description="实际数据")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChangeLogResponse(BaseModel):
@@ -28,10 +27,9 @@ class ChangeLogResponse(BaseModel):
     type: str
     id: str
     version: int
-    payload: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SnapshotResponse(BaseModel):
@@ -43,8 +41,7 @@ class SnapshotResponse(BaseModel):
     chunk_total: int = Field(..., description="总块数")
     object_count: int = Field(..., description="快照包含的总对象数量")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SnapshotInfo(BaseModel):
@@ -61,8 +58,7 @@ class SnapshotInfo(BaseModel):
     last_access_at: datetime = Field(..., description="最后访问时间")
     expire_at: datetime = Field(..., description="过期时间")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChangesRequest(BaseModel):
@@ -73,8 +69,7 @@ class ChangesRequest(BaseModel):
     limit: int = Field(1000, description="返回条数限制")
     wait: Optional[str] = Field(None, description="长轮询等待时间")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SnapshotRequest(BaseModel):
@@ -86,12 +81,11 @@ class SnapshotRequest(BaseModel):
     snapshot_id: Optional[str] = Field(None, description="快照ID，用于获取后续块")
     chunk: Optional[int] = Field(None, description="块索引")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class InfoResponse(BaseModel):
-    """系统信息响应模型 - 严格遵循DRC协议规范"""
+    """系统信息响应模型 - 严格遵循 DSP 协议规范"""
 
     service: str = Field(..., description="服务名称")
     version: str = Field(..., description="服务版本号")
@@ -101,9 +95,9 @@ class InfoResponse(BaseModel):
     snapshot: Dict[str, Any] = Field(..., description="快照配置")
     changes: Dict[str, Any] = Field(..., description="变更流配置")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "service": "agent-registry",
                 "version": "1.0.0",
@@ -122,7 +116,8 @@ class InfoResponse(BaseModel):
                 },
                 "changes": {"supports_long_polling": False, "payload_type": "FULL_OBJ"},
             }
-        }
+        },
+    )
 
 
 # WebHook 相关的 Schema
@@ -137,9 +132,9 @@ class WebHookCreate(BaseModel):
     events: List[str] = Field(..., description="关注的事件类型列表")
     description: Optional[str] = Field(None, max_length=500, description="WebHook描述")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "url": "https://discovery.example.com/webhook/data-change",
                 "secret": "shared-secret-key",
@@ -147,7 +142,8 @@ class WebHookCreate(BaseModel):
                 "events": ["data_change", "retention_cleanup"],
                 "description": "Discovery service webhook",
             }
-        }
+        },
+    )
 
 
 class WebHookUpdate(BaseModel):
@@ -159,8 +155,7 @@ class WebHookUpdate(BaseModel):
     events: Optional[List[str]] = Field(None, description="关注的事件类型列表")
     description: Optional[str] = Field(None, max_length=500, description="WebHook描述")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WebHookResponse(BaseModel):
@@ -180,9 +175,9 @@ class WebHookResponse(BaseModel):
     created_at: datetime = Field(..., description="创建时间")
     updated_at: datetime = Field(..., description="更新时间")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "id": "wh_abc123def456",
                 "url": "https://discovery.example.com/webhook/data-change",
@@ -197,7 +192,8 @@ class WebHookResponse(BaseModel):
                 "next_retry_at": None,
                 "created_at": "2025-08-19T10:30:00Z",
             }
-        }
+        },
+    )
 
 
 class WebHookNotification(BaseModel):
@@ -208,16 +204,17 @@ class WebHookNotification(BaseModel):
     timestamp: datetime = Field(..., description="事件时间戳")
     data: Dict[str, Any] = Field(..., description="事件数据")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "id": "wh_abc123def456",
                 "event": "data_change",
                 "timestamp": "2025-08-19T12:15:30Z",
                 "data": {"type": "acs", "current_seq": 42789},
             }
-        }
+        },
+    )
 
 
 class WebHookCallbackResponse(BaseModel):
@@ -226,11 +223,12 @@ class WebHookCallbackResponse(BaseModel):
     status: str = Field(..., description="处理状态")
     processed_at: datetime = Field(..., description="处理时间")
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "status": "acknowledged",
                 "processed_at": "2025-08-19T12:15:35Z",
             }
-        }
+        },
+    )

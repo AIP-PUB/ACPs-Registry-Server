@@ -117,6 +117,7 @@ def create_user(
 
     # Hash the password if provided
     if password := user_data.get("password"):
+        auth_service.validate_password_complexity(password)
         user_data["hashed_password"] = get_password_hash(password)
 
     # Remove plain password from data before storing
@@ -203,6 +204,7 @@ def update_user_password(
         )
 
     # Update password
+    auth_service.validate_password_complexity(new_password)
     user.hashed_password = get_password_hash(new_password)
     user.updated_at = get_beijing_time()
 
@@ -268,6 +270,7 @@ def admin_reset_password(db: Session, user_id: uuid.UUID, new_password: str) -> 
         )
 
     # Update password
+    auth_service.validate_password_complexity(new_password)
     user.hashed_password = get_password_hash(new_password)
     user.updated_at = get_beijing_time()
 

@@ -31,14 +31,19 @@ from app.agent.service import (
     batch_delete_agents,
     disable_agent,
     enable_agent,
-    search_agents,
     get_recent_agents,
     create_agent_response,
     create_agent_detail_response,
+    generate_jsonc_sample_from_schema,
     get_agent_by_aic,
 )
 from app.agent.exception import AgentException, AgentError
 from app.utils.utils import parse_boolean_string
+import json
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Create separate routers for public, client and staff endpoints
 router_public = APIRouter(prefix="/agent/public", tags=["agent-public"])
@@ -50,38 +55,28 @@ router_staff = APIRouter(prefix="/agent/staff", tags=["agent-staff"])
 # -------------------------------------------------------------------
 
 
-@router_public.post("/search", response_model=AgentSearchResponse)
-async def public_search_for_agents(
-    query: AgentSearchQuery, with_users: bool = False, db: Session = Depends(get_db)
-):
+@router_public.get("/acs_example")
+async def get_acs_example():
     """
-    基于向量匹配搜索 Agent，返回最匹配的 N 条数据（公开接口，无需登录）
-    - 支持是否加载关联用户数据（创建者和处理者）
+    获取 ACS (Agent Capability Spec) 的示例 JSONC (带注释)
     """
-    agents, total = search_agents(db, query.query, query.page_size, query.page_num)
+    base_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    schema_path = os.path.join(base_dir, "app/agent/acsSchema.json")
 
-    # 如果需要加载用户，则需要重新查询获取关联数据
-    if with_users and agents:
-        agent_ids = [agent.id for agent in agents]
-        with_user_agents = []
-        for agent_id in agent_ids:
-            agent_with_users = get_agent(db, agent_id, with_users=True)
-            if agent_with_users:
-                with_user_agents.append(agent_with_users)
-        agents = with_user_agents
+    if not os.path.exists(schema_path):
+        raise AgentException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_name="schema_file_missing",
+            error_msg="Schema file not found",
+        )
 
-    # 根据是否加载了用户信息，选择合适的响应构造函数
-    if with_users:
-        items = [create_agent_detail_response(agent) for agent in agents]
-    else:
-        items = [create_agent_response(agent) for agent in agents]
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
 
-    return {
-        "items": items,
-        "total": total,
-        "page_num": query.page_num,
-        "page_size": query.page_size,
-    }
+    jsonc_content, _ = generate_jsonc_sample_from_schema(schema)
+    return jsonc_content
 
 
 @router_public.get("/recent", response_model=AgentSearchResponse)
@@ -192,10 +187,15 @@ async def client_read_agents(
     statuses: List[ApprovalStatus] = Query(None, explode=True),
     name: Optional[str] = None,
     version: Optional[str] = None,
-    is_acp_support: Optional[str] = Query(None),
-    is_a2a_support: Optional[str] = Query(None),
-    is_anp_support: Optional[str] = Query(None),
+    aic: Optional[str] = None,
+    name_like: Optional[str] = None,
+    version_like: Optional[str] = None,
+    aic_like: Optional[str] = None,
+    is_active: Optional[str] = Query(None),
+    is_deleted: Optional[str] = Query(None),
+    is_disabled: Optional[str] = Query(None),
     with_users: bool = False,
+    is_ontology: Optional[bool] = None,
     page_num: int = 1,
     page_size: int = 10,
     db: Session = Depends(get_db),
@@ -212,9 +212,9 @@ async def client_read_agents(
     create_by_id = current_user.id
 
     # 将字符串类型的布尔查询参数转换为布尔值或 None
-    is_acp_support_bool = parse_boolean_string(is_acp_support)
-    is_a2a_support_bool = parse_boolean_string(is_a2a_support)
-    is_anp_support_bool = parse_boolean_string(is_anp_support)
+    is_active_bool = parse_boolean_string(is_active)
+    is_deleted_bool = parse_boolean_string(is_deleted)
+    is_disabled_bool = parse_boolean_string(is_disabled)
 
     agents, total = get_agents(
         db=db,
@@ -223,13 +223,16 @@ async def client_read_agents(
         statuses=statuses,
         name=name,
         version=version,
-        is_acp_support=is_acp_support_bool,
-        is_a2a_support=is_a2a_support_bool,
-        is_anp_support=is_anp_support_bool,
+        aic=aic,
+        name_like=name_like,
+        version_like=version_like,
+        aic_like=aic_like,
         create_by_id=create_by_id,
         with_users=with_users,
-        include_inactive=True,
-        include_deleted=False,
+        is_active=is_active_bool,
+        is_deleted=is_deleted_bool,
+        is_disabled=is_disabled_bool,
+        is_ontology=is_ontology,
     )
 
     # 根据是否加载了用户信息，选择合适的响应构造函数
@@ -259,6 +262,13 @@ async def client_update_agent_info(
     updated_agent = update_agent(
         db, agent_id, current_user.id, agent_update.dict(exclude_unset=True)
     )
+    if agent_update.acs is None:
+        raise AgentException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_name=AgentError.ACS_NOT_EXISTED,
+            error_msg="ACS cannot be null",
+            input_params={"agent_id": str(agent_id)},
+        )
     agent = get_agent(db, agent_id, with_users=False)
     return create_agent_response(agent)
 
@@ -342,9 +352,13 @@ async def staff_read_agents(
     statuses: List[ApprovalStatus] = Query(None, explode=True),
     name: Optional[str] = None,
     version: Optional[str] = None,
-    is_acp_support: Optional[str] = Query(None),
-    is_a2a_support: Optional[str] = Query(None),
-    is_anp_support: Optional[str] = Query(None),
+    aic: Optional[str] = None,
+    name_like: Optional[str] = None,
+    version_like: Optional[str] = None,
+    aic_like: Optional[str] = None,
+    is_active: Optional[str] = Query(None),
+    is_deleted: Optional[str] = Query(None),
+    is_disabled: Optional[str] = Query(None),
     create_by_id: Optional[uuid.UUID] = None,
     process_by_id: Optional[uuid.UUID] = None,
     processed_by_me: Optional[bool] = False,
@@ -361,9 +375,9 @@ async def staff_read_agents(
     - 支持是否加载关联用户数据（创建者和处理者）
     """
     # 将字符串类型的布尔查询参数转换为布尔值或 None
-    is_acp_support_bool = parse_boolean_string(is_acp_support)
-    is_a2a_support_bool = parse_boolean_string(is_a2a_support)
-    is_anp_support_bool = parse_boolean_string(is_anp_support)
+    is_active_bool = parse_boolean_string(is_active)
+    is_deleted_bool = parse_boolean_string(is_deleted)
+    is_disabled_bool = parse_boolean_string(is_disabled)
 
     # 如果 processed_by_me 为 True，则将 process_by_id 设置为当前用户的 ID
     if processed_by_me:
@@ -376,12 +390,16 @@ async def staff_read_agents(
         statuses=statuses,
         name=name,
         version=version,
-        is_acp_support=is_acp_support_bool,
-        is_a2a_support=is_a2a_support_bool,
-        is_anp_support=is_anp_support_bool,
+        aic=aic,
+        name_like=name_like,
+        version_like=version_like,
+        aic_like=aic_like,
         create_by_id=create_by_id,
         process_by_id=process_by_id,
         with_users=with_users,
+        is_active=is_active_bool,
+        is_deleted=is_deleted_bool,
+        is_disabled=is_disabled_bool,
     )
 
     # 根据是否加载了用户信息，选择合适的响应构造函数

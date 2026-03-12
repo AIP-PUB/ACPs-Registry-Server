@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING, ForwardRef
 from sqlmodel import Column, Field, SQLModel, Relationship
-from pydantic import EmailStr, field_validator
+from pydantic import EmailStr, field_validator, ConfigDict
 import uuid
 import uuid6
 from sqlalchemy.dialects.postgresql import UUID
@@ -32,8 +32,7 @@ class Role(SQLModel, table=True):
     name: RoleType = Field(index=True)
     description: Optional[str] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 # Association table for user roles many-to-many relationship
@@ -108,8 +107,7 @@ class User(SQLModel, table=True):
         }
     )
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator("username", "phone")
     @classmethod
@@ -128,7 +126,5 @@ class User(SQLModel, table=True):
         return v
 
 
-# 解析循环引用
-from app.agent.model import Agent, UserRef
-
-UserRef.__forward_arg__ = User
+# 解析循环引用 - 只需要导入 Agent 以完成关系解析
+from app.agent.model import Agent

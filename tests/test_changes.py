@@ -69,7 +69,7 @@ class TestChangesAPI:
             return [], 1
 
         monkeypatch.setattr(api_module, "get_changes", mock_get_changes)
-        monkeypatch.setattr(api_module.settings, "DRC_CHANGES_MAX_LIMIT", max_limit)
+        monkeypatch.setattr(api_module.settings, "DSP_CHANGES_MAX_LIMIT", max_limit)
 
         response = client.get("/changes", params={"limit": requested_limit})
 
@@ -87,7 +87,7 @@ class TestChangesAPI:
             return [], 1
 
         monkeypatch.setattr(api_module, "get_changes", mock_get_changes)
-        monkeypatch.setattr(api_module.settings, "DRC_CHANGES_DEFAULT_LIMIT", 7)
+        monkeypatch.setattr(api_module.settings, "DSP_CHANGES_DEFAULT_LIMIT", 7)
 
         response = client.get("/changes", params={"limit": 0})
 

@@ -21,7 +21,7 @@ class SnapshotCleanupTask:
     def __init__(self):
         self.is_running = False
         self.cleanup_interval = (
-            settings.DRC_SNAPSHOT_CLEANUP_INTERVAL_HOURS * 3600
+            settings.DSP_SNAPSHOT_CLEANUP_INTERVAL_HOURS * 3600
         )  # 转换为秒
 
     async def start(self):
@@ -32,7 +32,7 @@ class SnapshotCleanupTask:
 
         self.is_running = True
         logger.info(
-            f"Starting snapshot cleanup task with interval: {settings.DRC_SNAPSHOT_CLEANUP_INTERVAL_HOURS} hours"
+            f"Starting snapshot cleanup task with interval: {settings.DSP_SNAPSHOT_CLEANUP_INTERVAL_HOURS} hours"
         )
 
         while self.is_running:
