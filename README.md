@@ -1,4 +1,4 @@
-# Agent 注册系统 - 服务端 API
+# Agent 注册系统 - 服务端 API（Deprecated）
 
 ## 1. 项目简要说明
 
